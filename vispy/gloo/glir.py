@@ -1418,6 +1418,8 @@ class GlirTexture(GlirObject):
         # np.dtype(np.float64) : gl.GL_DOUBLE
     }
 
+    _gtype = gl.GL_BYTE
+
     def create(self):
         self._handle = gl.glCreateTexture()
         self._shape_formats = 0  # To make setting size cheap
@@ -1468,6 +1470,13 @@ class GlirTexture(GlirObject):
         gl.glTexParameterf(self._target, gl.GL_TEXTURE_MIN_FILTER, min)
         gl.glTexParameterf(self._target, gl.GL_TEXTURE_MAG_FILTER, mag)
 
+    def get_gtype(self, dtype):
+        gtype = self._types.get(np.dtype(dtype), None)
+        if gtype is None:
+            raise ValueError("Type %r not allowed for texture" % dtype)
+        return gtype
+
+
 # these should be auto generated in _constants.py. But that doesn't seem
 # to be happening. TODO - figure out why the C parser in (createglapi.py)
 # is not extracting these constanst out.
@@ -1481,27 +1490,28 @@ GL_TEXTURE_1D = gl.Enum('GL_TEXTURE_1D', 3552)
 class GlirTexture1D(GlirTexture):
     _target = GL_TEXTURE_1D
 
-    def set_size(self, shape, format, internalformat):
+    def set_size(self, shape, format, internalformat, dtype=None):
         format = as_enum(format)
         if internalformat is not None:
             internalformat = as_enum(internalformat)
         else:
             internalformat = format
+
+        gtype = self._gtype if dtype is None else self.get_gtype(dtype)
+
         # Shape is width
-        if (shape, format, internalformat) != self._shape_formats:
+        if (shape, format, internalformat, gtype) != self._shape_formats:
             self.activate()
-            self._shape_formats = shape, format, internalformat
+            self._shape_formats = shape, format, internalformat, gtype
             glTexImage1D(self._target, 0, internalformat, format,
-                         gl.GL_BYTE, shape[:1])
+                         gtype, shape[:1])
 
     def set_data(self, offset, data):
         self.activate()
-        shape, format, internalformat = self._shape_formats
+        shape, format, internalformat, gtype = self._shape_formats
         x = offset[0]
         # Get gtype
-        gtype = self._types.get(np.dtype(data.dtype), None)
-        if gtype is None:
-            raise ValueError("Type %r not allowed for texture" % data.dtype)
+        gtype = self.get_gtype(data.dtype)
         # Set alignment (width is nbytes_per_pixel * npixels_per_line)
         alignment = self._get_alignment(data.shape[-1] * data.itemsize)
         if alignment != 4:
@@ -1515,26 +1525,28 @@ class GlirTexture1D(GlirTexture):
 
 class GlirTexture2D(GlirTexture):
     _target = gl.GL_TEXTURE_2D
+    _gtype = gl.GL_UNSIGNED_BYTE
 
-    def set_size(self, shape, format, internalformat):
+    def set_size(self, shape, format, internalformat, dtype=None):
         # Shape is height, width
         format = as_enum(format)
         internalformat = format if internalformat is None \
             else as_enum(internalformat)
-        if (shape, format, internalformat) != self._shape_formats:
-            self._shape_formats = shape, format, internalformat
+
+        gtype = self._gtype if dtype is None else self.get_gtype(dtype)
+
+        if (shape, format, internalformat, gtype) != self._shape_formats:
+            self._shape_formats = shape, format, internalformat, gtype
             self.activate()
             gl.glTexImage2D(self._target, 0, internalformat, format,
-                            gl.GL_UNSIGNED_BYTE, shape[:2])
+                            gtype, shape[:2])
 
     def set_data(self, offset, data):
         self.activate()
-        shape, format, internalformat = self._shape_formats
+        shape, format, internalformat, gtype = self._shape_formats
         y, x = offset
         # Get gtype
-        gtype = self._types.get(np.dtype(data.dtype), None)
-        if gtype is None:
-            raise ValueError("Type %r not allowed for texture" % data.dtype)
+        gtype = self.get_gtype(data.dtype)
         # Set alignment (width is nbytes_per_pixel * npixels_per_line)
         alignment = self._get_alignment(data.shape[-2] * data.shape[-1] * data.itemsize)
         if alignment != 4:
@@ -1610,27 +1622,27 @@ def glTexSubImage3D(target, level, xoffset, yoffset, zoffset,
 class GlirTexture3D(GlirTexture):
     _target = GL_TEXTURE_3D
 
-    def set_size(self, shape, format, internalformat):
+    def set_size(self, shape, format, internalformat, dtype=None):
         format = as_enum(format)
         if internalformat is not None:
             internalformat = as_enum(internalformat)
         else:
             internalformat = format
+        gtype = self._gtype if dtype is None else self.get_gtype(dtype)
+
         # Shape is depth, height, width
-        if (shape, format, internalformat) != self._shape_formats:
+        if (shape, format, internalformat, gtype) != self._shape_formats:
             self.activate()
-            self._shape_formats = shape, format, internalformat
+            self._shape_formats = shape, format, internalformat, gtype
             glTexImage3D(self._target, 0, internalformat, format,
-                         gl.GL_BYTE, shape[:3])
+                         gtype, shape[:3])
 
     def set_data(self, offset, data):
         self.activate()
-        shape, format, internalformat = self._shape_formats
+        shape, format, internalformat, gtype = self._shape_formats
         z, y, x = offset
         # Get gtype
-        gtype = self._types.get(np.dtype(data.dtype), None)
-        if gtype is None:
-            raise ValueError("Type not allowed for texture")
+        gtype = self.get_gtype(data.dtype)
         # Set alignment (width is nbytes_per_pixel * npixels_per_line)
         alignment = self._get_alignment(data.shape[-2] * data.shape[-1] * data.itemsize)
         if alignment != 4:
@@ -1644,6 +1656,7 @@ class GlirTexture3D(GlirTexture):
 
 class GlirTextureCube(GlirTexture):
     _target = gl.GL_TEXTURE_CUBE_MAP
+    _gtype = gl.GL_UNSIGNED_BYTE
     _cube_targets = [
         gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X,
         gl.GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -1653,24 +1666,23 @@ class GlirTextureCube(GlirTexture):
         gl.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
     ]
 
-    def set_size(self, shape, format, internalformat):
+    def set_size(self, shape, format, internalformat, dtype=None):
         format = as_enum(format)
         internalformat = format if internalformat is None \
             else as_enum(internalformat)
-        if (shape, format, internalformat) != self._shape_formats:
-            self._shape_formats = shape, format, internalformat
+        gtype = self._gtype if dtype is None else self.get_gtype(dtype)
+        if (shape, format, internalformat, gtype) != self._shape_formats:
+            self._shape_formats = shape, format, internalformat, gtype
             self.activate()
             for target in self._cube_targets:
                 gl.glTexImage2D(target, 0, internalformat, format,
-                                gl.GL_UNSIGNED_BYTE, shape[1:3])
+                                gtype, shape[1:3])
 
     def set_data(self, offset, data):
-        shape, format, internalformat = self._shape_formats
+        shape, format, internalformat, gtype = self._shape_formats
         y, x = offset[:2]
         # Get gtype
-        gtype = self._types.get(np.dtype(data.dtype), None)
-        if gtype is None:
-            raise ValueError("Type %r not allowed for texture" % data.dtype)
+        gtype = self.get_gtype(data.dtype)
         self.activate()
         # Set alignment (width is nbytes_per_pixel * npixels_per_line)
         alignment = self._get_alignment(data.shape[-2] * data.shape[-1] * data.itemsize)
