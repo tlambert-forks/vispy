@@ -107,7 +107,7 @@ class BaseTexture(GLObject):
                 raise ValueError('Texture needs data or shape, not both.')
             data = np.array(data, copy=False)
             # So we can test the combination
-            self._resize(data.shape, format, internalformat)
+            self._resize(data.shape, format, internalformat, dtype=data.dtype)
             self._set_data(data)
         elif shape is not None:
             self._resize(shape, format, internalformat)
@@ -199,7 +199,7 @@ class BaseTexture(GLObject):
         self._interpolation = value
         self._glir.command('INTERPOLATION', self._id, *value)
 
-    def resize(self, shape, format=None, internalformat=None):
+    def resize(self, shape, format=None, internalformat=None, dtype=None):
         """Set the texture size and format
 
         Parameters
@@ -220,10 +220,18 @@ class BaseTexture(GLObject):
             'rgba32f'.  If None, the internalformat is chosen
             automatically based on the number of channels.  This is a
             hint which may be ignored by the OpenGL implementation.
+        dtype : np.dtype | None
+            The data type of the texture pixel data:
+            {'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'float32'}
+            if None, the dtype is chosen automatically based on the texture type.
+                1D Texture:  GL_BYTE
+                2D Texture:  GL_UNSIGNED_BYTE
+                3D Texture:  GL_BYTE
+                TextureCube: GL_UNSIGNED_BYTE
         """
-        return self._resize(shape, format, internalformat)
+        return self._resize(shape, format, internalformat, dtype)
 
-    def _resize(self, shape, format=None, internalformat=None):
+    def _resize(self, shape, format=None, internalformat=None, dtype=None):
         """Internal method for resize.
         """
         shape = self._normalize_shape(shape)
@@ -274,7 +282,7 @@ class BaseTexture(GLObject):
         self._format = format
         self._internalformat = internalformat
         self._glir.command('SIZE', self._id, self._shape, self._format, 
-                           self._internalformat)
+                           self._internalformat, dtype)
 
     def set_data(self, data, offset=None, copy=False):
         """Set texture data
@@ -307,9 +315,9 @@ class BaseTexture(GLObject):
         
         # Maybe resize to purge DATA commands?
         if offset is None:
-            self._resize(data.shape)
+            self._resize(data.shape, dtype=data.dtype)
         elif all([i == 0 for i in offset]) and data.shape == self._shape:
-            self._resize(data.shape)
+            self._resize(data.shape, dtype=data.dtype)
         
         # Convert offset to something usable
         offset = offset or tuple([0 for i in range(self._ndim)])
